@@ -1,0 +1,6 @@
+[submodule "newsCraw"]
+	path = newsCraw
+	url = git@github.com:memento7/newsCraw.git
+[submodule "namuGrim"]
+	path = namuGrim
+	url = git@github.com:memento7/namuGrim.git
