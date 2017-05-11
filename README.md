@@ -17,3 +17,8 @@ install requirements (*above python 3.5*)
 ```
 pip install KINCluster
 ```
+
+run application
+```
+python memento.py
+```
