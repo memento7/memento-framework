@@ -1,9 +1,12 @@
-from KINCluster.core.pipeline import Pipeline 
+from KINCluster import Pipeline 
 
 import memento_settings as MS
 
+from utility import get_similar
 from item import myItem
 import connection
+
+import numpy as np
 
 from itertools import chain
 import json
@@ -27,7 +30,7 @@ class PipelineServer(Pipeline):
                                 href_naver=row.href_naver,comments=list(chain(*row.comments)),quotes=list(chain(*row.quotes))))
         return items
 
-    def dress_item(self, ext, items):
+    def dress_item(self, ext):
 
         def push_event(title, date, keywords, rate, items):
 
@@ -64,10 +67,15 @@ class PipelineServer(Pipeline):
         def get_memento_rate(items):
             return sum([item.reply_count + 1000 for item in items])
         
-        if len(items) < 12: return
+        filter_quote = lambda x: " ".join(["".join(y) for y in x])
+        def get_property(item):
+            return " ".join([item.title, item.content, filter_quote(item.quotes)])
+
+        if len(items) < 10: return
 
         rate = get_memento_rate(items)
-        topic = ext.topic
+        simi = get_similar(self.keyword, ext.items)
+        topic = ext.items[np.argmax(simi)]
         date = str(topic.published_time)[:10]
 
         print (topic.content)

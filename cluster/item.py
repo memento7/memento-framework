@@ -1,4 +1,4 @@
-from KINCluster.core.item import Item
+from KINCluster import Item
 
 class myItem(Item):
     def __repr__(self):
