@@ -23,7 +23,9 @@ def disconnect(conn, cur):
     cur.close()
     conn.close()
 
-def get_query_result(query, cur, func=lambda x: list(x)):
+def get_query_result(query, cur, func=lambda x: list(x), debug=False):
+    if debug:
+        print('execute query:', query)
     result = cur.execute(query)
     return func(cur)
 
@@ -46,8 +48,7 @@ def get_navernews(qs, qe):
 
     q = "SELECT " + ",".join(news_columns) + " FROM naver_news where published_time between \'" + qs + "\' and \'" + qe +"\'"
     f = lambda c: pd.DataFrame(list(c), columns=news_columns)
-    
-    df = get_query_result(q, cur, f)
+    df = get_query_result(q, cur, f, debug=True)
     df['comments'] = list(get_comments(df.id.values))
     df['quotes'] = list(get_quote(df.id.values))
 
@@ -67,7 +68,7 @@ def get_entities():
 
     q = "SELECT id, keyword FROM entity"
     f = lambda c: [{k[0]:v for k,v in zip(c.description, x)} for x in c.fetchall()]
-    r = get_query_result(q, cur, f)
+    r = get_query_result(q, cur, f, debug=True)
 
     entities = {entity['keyword']: get_entity(entity['id']) for entity in r}
     
@@ -81,7 +82,12 @@ headers = { "Content-Type" : "application/json",
 keyword_columns = ['id', 'nickname', 'realname', 'subkey']
 def get_keywords(headers=headers):
     req = requests.get(SERVER_API + 'entities/waiting', headers=headers)
-    return [{c: k[c] for c in keyword_columns} for k in json.loads(req.text)]
+    try:
+        res = json.loads(req.text)
+    except:
+        raise 'api server error, cannot get entities/waiting'
+
+    return [{c: k[c] for c in keyword_columns} for k in res]
 
 keywords = get_keywords()
 def get_keyword_index(keyword):
@@ -97,12 +103,12 @@ def get_keyword(keyword):
 def put_data(host, payload={}, headers=headers):
     while True:
         try:
-            # print ('requests-host', host)
-            # print ('requests-payload', payload)
-            # req = requests.post(host, json=payload, headers=headers)
-            # print ('response', req.text)
-            # return req.text
-            return "{\"id\": 1}"
+            print ('requests-host', host)
+            print ('requests-payload', payload)
+            req = requests.post(host, json=payload, headers=headers)
+            print ('response', req.text)
+            return req.text
+            # return "{\"id\": 1}"
         except requests.exceptions.ConnectionError:
             print ('ConnectionError')
             print ('wait 0.05 seconds')

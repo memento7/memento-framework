@@ -71,16 +71,11 @@ class PipelineServer(Pipeline):
         def get_property(item):
             return " ".join([item.title, item.content, filter_quote(item.quotes)])
 
-        if len(items) < 10: return
+        if len(ext.items) < 10: return
 
-        rate = get_memento_rate(items)
-        simi = get_similar(self.keyword, ext.items)
+        rate = get_memento_rate(ext.items)
+        simi = get_similar(self.keyword, map(lambda x: str(x), ext.items))
         topic = ext.items[np.argmax(simi)]
         date = str(topic.published_time)[:10]
 
-        print (topic.content)
-        print (topic.comments)
-        print (topic.quotes)
-        print (ext.keywords)
-
-        self.eid.append(push_event(topic.title, date, ext.keywords, rate, items))
+        self.eid.append(push_event(topic.title, date, ext.keywords, rate, ext.items))
