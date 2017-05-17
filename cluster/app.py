@@ -1,43 +1,47 @@
-from KINCluster import KINCluster 
+from datetime import datetime, timedelta
+
+import numpy as np
+from KINCluster import KINCluster
+
 from pipeline import PipelineServer
 from connection import get_navernews, get_keyword
 from utility import get_similar, filter_quote
+import memento_settings as MS
 
-import numpy as np
+DATE_START = datetime(2015, 1, 1)
+DATE_END = datetime(2015, 1, 31)
+DATE_RANGE = timedelta(days=30)
+DATE_JUMP = timedelta(days=15)
 
-from datetime import datetime, timedelta
-
-date_start = datetime(2015,1,1)
-date_end = datetime(2015,1,31)
-date_range = timedelta(days=30)
-date_jump = timedelta(days=15)
-
-minimum_items = 10
+#NEED_CONCAT = DATE_JUMP < DATE_RANGE
 def process():
-    for day in range(int((date_end - date_start) / date_jump)):  
-        date_s = date_start + date_jump * day
-        date_e = date_s + date_range
-        print ('date range', date_s, date_e)
+    for day in range(int((DATE_END - DATE_START) / DATE_JUMP)):
+        date_s = DATE_START + DATE_JUMP * day
+        date_e = date_s + DATE_RANGE
+        print('date range', date_s, date_e)
 
-        df = get_navernews(date_s.strftime("%Y/%m/%d"), date_e.strftime("%Y/%m/%d"))
+        news_frame = get_navernews(date_s.strftime("%Y/%m/%d"), date_e.strftime("%Y/%m/%d"))
 
-        for keyword in np.unique(df.keyword.values):
+        for keyword in np.unique(news_frame.keyword.values):
             key = get_keyword(keyword)
             kid = key['id']
 
-            print ('start with keyword', keyword)
+            print('start with keyword', keyword)
 
-            kf = df.loc[df.keyword == keyword]
-            kf['similar'] = get_similar(keyword, [" ".join([a,b,filter_quote(c)]) for a,b,c in zip(kf['title'], kf['content'], kf['quotes'])])
-            rf = kf.loc[(kf['similar'] > 0.03) & (kf['title'].str.contains(keyword))]
+            key_frame = news_frame.loc[news_frame.keyword == keyword]
+            simi_list = [" ".join([a, b, filter_quote(c)]) for a, b, c in zip(key_frame['title'], key_frame['content'], key_frame['quotes'])]
+            key_frame.loc[:, 'similar'] = get_similar(keyword, simi_list)
+            
+            rel_condition = (key_frame['similar'] > 0.03) & (key_frame['title'].str.contains(keyword))
+            rel_frame = key_frame.loc[rel_condition]
 
-            kh, kw = kf.shape
-            rh, rw = rf.shape
+            rel_size, _ = rel_frame.shape
 
-            if rh < minimum_items: continue
-            print ('there are', rh, 'news')
+            if rel_size < MS.MINIMUM_ITEMS:
+                continue
+            print('there are', rel_size, 'news')
 
-            kin = KINCluster(PipelineServer(kid, keyword, kf))
+            kin = KINCluster(PipelineServer(kid, keyword, key_frame))
             kin.run()
             del kin
 

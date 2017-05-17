@@ -1,21 +1,29 @@
 from os import environ
+from time import sleep
+import json
 
-from time import time, sleep
+from utility import Logging
+
 import requests
 import pymysql
-import json
 import pandas as pd
+pd.options.mode.chained_assignment = None  # default='warn'
 
 SERVER_PDB = 'server1.memento.live'
 SERVER_RDB = 'server2.memento.live'
 SERVER_API = 'https://api.memento.live/persist/'
 
-def connection(host=SERVER_RDB, user='memento', password=environ['MEMENTO_PASS'], db='memento', charset='utf8mb4'):
+def connection(host=SERVER_RDB,
+               user='memento',
+               password=environ['MEMENTO_PASS'],
+               db='memento',
+               charset='utf8mb4'):
     conn = pymysql.connect(host=host,
                            user=user,
                            password=password,
                            db=db,
-                           charset=charset)
+                           charset=charset,
+                           cursorclass=pymysql.cursors.SSCursor)
     cur = conn.cursor()
     return conn, cur
 
@@ -23,71 +31,77 @@ def disconnect(conn, cur):
     cur.close()
     conn.close()
 
-def get_query_result(query, cur, func=lambda x: list(x), debug=False):
+def get_query_result(query, cur, func=list, debug=False):
     if debug:
-        print('execute query:', query)
+        Logging.log('<<Query Executed>>: {}'.format(query))
     result = cur.execute(query)
+    if debug:
+        Logging.log('<<Query Result>>: {}'.format(result))
     return func(cur)
 
-news_columns = ['id', 'keyword', 'title', 'content', 'published_time', 'reply_count', 'href_naver']
-comment_columns = ['content']
-quote_columns = ['quote']
-def get_navernews(qs, qe):
+@Logging
+def get_navernews(date_start, date_end, columns=['id', 'keyword', 'title', 'content', 'published_time', 'reply_count', 'href_naver']):
     conn, cur = connection()
 
-    def get_comments(ids, cur=cur):
-        q = "SELECT " + ",".join(comment_columns) + " FROM naver_comment where target = {} order by reply_count + sympathy_count - antipathy_count desc limit 255"
+    def get_comments(ids, cur=cur, columns=['content']):
+        query = "SELECT {} FROM naver_comment where target = {} order by {} desc limit {}".format(
+            ",".join(columns), "{}", 'reply_count + sympathy_count - antipathy_count', 255)
         for idx in ids:
-            res = get_query_result(q.format(idx), cur)
-            yield res
-    def get_quote(ids, cur=cur):
-        q = "SELECT " + ",".join(quote_columns) + " FROM naver_quote where target = {} and flag = 0"
-        for idx in ids:
-            res = get_query_result(q.format(idx), cur)
+            res = get_query_result(query.format(idx), cur)
             yield res
 
-    q = "SELECT " + ",".join(news_columns) + " FROM naver_news where published_time between \'" + qs + "\' and \'" + qe +"\'"
-    f = lambda c: pd.DataFrame(list(c), columns=news_columns)
-    df = get_query_result(q, cur, f, debug=True)
-    df['comments'] = list(get_comments(df.id.values))
-    df['quotes'] = list(get_quote(df.id.values))
+    def get_quote(ids, cur=cur, columns=['quote']):
+        query = "SELECT {} FROM naver_quote where target = {} and flag = {}".format(
+            ",".join(columns), "{}", 0)
+        for idx in ids:
+            res = get_query_result(query.format(idx), cur)
+            yield res
 
+    query = "SELECT {} FROM naver_news where published_time between \'{}\' and \'{}\'".format(
+        ",".join(columns), date_start, date_end)
+    func = lambda c: pd.DataFrame(list(c), columns=columns)
+    result_frame = get_query_result(query, cur, func, debug=True)
+    result_frame['comments'] = list(get_comments(result_frame.id.values))
+    result_frame['quotes'] = list(get_quote(result_frame.id.values))
+
+    total_bytes = get_query_result("SHOW SESSION STATUS LIKE 'bytes_sent'", cur)
+    Logging.log('<<read total bytes>>: {}'.format(total_bytes))
     disconnect(conn, cur)
-    return df
+    return result_frame
 
+@Logging
 def get_entities():
     conn, cur = connection()
 
     def get_entity(target, cur=cur):
         def _get_(table, target):
-            q = "SELECT * FROM entity_{} WHERE target={}".format(table, target)
-            f = lambda c: [tuple(v for k,v in zip(c.description, x) if not k[0] in ['id', 'target', 'flag']) for x in c.fetchall()]
-            return get_query_result(q, cur, f)
+            query = "SELECT * FROM entity_{} WHERE target={}".format(table, target)
+            func = lambda c: [tuple(v for k, v in zip(c.description, x) if not k[0] in ['id', 'target', 'flag']) for x in c.fetchall()]
+            return get_query_result(query, cur, func)
 
         return {table: _get_(table, target) for table in ['accent', 'link', 'strike', 'tag']}
 
-    q = "SELECT id, keyword FROM entity"
-    f = lambda c: [{k[0]:v for k,v in zip(c.description, x)} for x in c.fetchall()]
-    r = get_query_result(q, cur, f, debug=True)
+    query = "SELECT id, keyword FROM entity"
+    func = lambda c: [{k[0]:v for k, v in zip(c.description, x)} for x in c.fetchall()]
+    result = get_query_result(query, cur, func, debug=True)
 
-    entities = {entity['keyword']: get_entity(entity['id']) for entity in r}
-    
+    entities = {entity['keyword']: get_entity(entity['id']) for entity in result}
     disconnect(conn, cur)
     return entities
 
-headers = { "Content-Type" : "application/json",
-            "charset": "utf-8",
-            "Authorization": environ['MEMENTO_BASIC']}
+HEADERS = {"Content-Type" : "application/json",
+           "charset": "utf-8",
+           "Authorization": environ['MEMENTO_BASIC']}
 
-keyword_columns = ['id', 'nickname', 'realname', 'subkey']
-def get_keywords(headers=headers):
-    req = requests.get(SERVER_API + 'entities/waiting', headers=headers)
+@Logging
+def get_keywords(headers=HEADERS, columns=['id', 'nickname', 'realname', 'subkey']):
+    req = requests.get(SERVER_API + 'entities/waiting', headers=headers, verify=True)
     try:
         res = json.loads(req.text)
     except:
         raise 'api server error, cannot get entities/waiting'
 
-    return [{c: k[c] for c in keyword_columns} for k in res]
+    return [{c: k[c] for c in columns} for k in res]
 
 keywords = get_keywords()
 def get_keyword_index(keyword):
@@ -100,17 +114,19 @@ def get_keyword(keyword):
     idx = get_keyword_index(keyword)
     return keywords[idx]
 
-def put_data(host, payload={}, headers=headers):
+PAYLOAD = {"default": "default"}
+@Logging
+def put_data(host, payload=PAYLOAD, headers=HEADERS):
     while True:
         try:
-            print ('requests-host', host)
-            print ('requests-payload', payload)
+            print('requests-host', host)
+            print('requests-payload', payload)
             req = requests.post(host, json=payload, headers=headers)
-            print ('response', req.text)
+            print('response', req.text)
             return req.text
             # return "{\"id\": 1}"
         except requests.exceptions.ConnectionError:
-            print ('ConnectionError')
-            print ('wait 0.05 seconds')
-            sleep(0.05)
+            Logging.log('ConnectionError')
+            Logging.log('wait 3 seconds')
+            sleep(3)
             continue
