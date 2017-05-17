@@ -119,10 +119,10 @@ PAYLOAD = {"default": "default"}
 def put_data(host, payload=PAYLOAD, headers=HEADERS):
     while True:
         try:
-            print('requests-host', host)
-            print('requests-payload', payload)
+            Logging.log('requests-host: {}'.format(host), 'DEBUG')
+            Logging.log('requests-payload: {}'.format(payload), 'DEBUG')
             req = requests.post(host, json=payload, headers=headers)
-            print('response', req.text)
+            Logging.log('response: {}'.format(req.text), 'DEBUG')
             return req.text
             # return "{\"id\": 1}"
         except requests.exceptions.ConnectionError:

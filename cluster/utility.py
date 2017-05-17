@@ -9,15 +9,15 @@ class Logging:
                       filename='cluster.log',
                       level=logging.INFO)
     __logger = {
-        logging.INFO: __log.info,
-        logging.DEBUG: __log.debug,
-        logging.warning: __log.warning
+        'INFO': __log.info,
+        'DEBUG': __log.debug,
+        'warning': __log.warning
     }
     def __init__(self, func):
         self.func = func
 
     def __call__(self, *args, **kwargs):
-        Logging.__log.info('{} with args: {}, kwargs: {}'.format(
+        Logging.__log.info('Logging: {} with args: {}, kwargs: {}'.format(
             self.func.__name__,
             args,
             kwargs,
@@ -25,7 +25,7 @@ class Logging:
         return self.func(*args, **kwargs)
 
     @staticmethod
-    def log(msg, level=logging.INFO):
+    def log(msg, level='INFO'):
         Logging.__logger[level](msg)
 
 def filter_quote(quotes):
