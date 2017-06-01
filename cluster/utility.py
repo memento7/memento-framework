@@ -18,6 +18,9 @@ class Logging:
         'DEBUG': __log.debug,
         'warning': __log.warning
     }
+    __logger_format = {
+    }
+
     def __init__(self, func):
         self.func = func
 
@@ -31,6 +34,20 @@ class Logging:
         ))
         return ret
 
+    def __get__(self, label):
+
+        pass
+
+    @staticmethod
+    def register(label, format):
+        Logging.__logger_format[label] = format
+
+    @staticmethod
+    def logf(label, msg, debug=True):
+        Logging.log(Logging.__logger_format[label].format(msg))
+        if debug:
+            print (Logging.__logger_format[label].format(msg))
+            
     @staticmethod
     def log(msg, level='INFO'):
         Logging.__logger[level](msg)
@@ -42,7 +59,7 @@ from connection import get_entities
 
 ENTITIES = get_entities()
 def get_similar(keyword, items):
-    entity = " ".join([k for k, v in ENTITIES[keyword]['tag'][:100]])
+    entity = " ".join([tag['tag'] for tag in ENTITIES[keyword]['tags'][:100]])
     tfidf_vectorizer = TfidfVectorizer()
     tfidf_matrix_train = tfidf_vectorizer.fit_transform([entity] + items)
     return cosine_similarity(tfidf_matrix_train[0:1], tfidf_matrix_train)[0][1:]
@@ -51,5 +68,5 @@ TAGGER = Komoran()
 def get_emotion(text, entities, size=5):
     counter = Counter([(word, tag) for word, tag in TAGGER.pos(text)]).most_common()
     keywords = list(map(lambda x: (x[0][0], x[1]), filter(lambda x: x[0][1] == 'XR', counter)))
-    tags = [ENTITIES[entity]['tag'] for entity in entities]
+    tags = [map(lambda x: (x['tag'], x['value']), ENTITIES[entity]['tags']) for entity in entities]
     return list(filter(lambda x: x[0] not in chain(*tags), keywords))[:size]
